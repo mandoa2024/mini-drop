@@ -18,4 +18,6 @@ def test_generate_flamegraph_svg_invokes_flamegraph_pl(monkeypatch):
 
     assert flamegraph.generate_flamegraph_svg("main;work 1") == "<svg>ok</svg>"
     assert calls["command"][:2] == ["perl", "/tmp/flamegraph.pl"]
+    assert "--width" in calls["command"]
+    assert "1600" in calls["command"]
     assert calls["input"] == "main;work 1"

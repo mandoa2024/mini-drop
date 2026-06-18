@@ -7,3 +7,5 @@ __pycache__
 htmlcov
 data
 artifacts
+web/node_modules
+web/dist

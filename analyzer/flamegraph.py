@@ -17,6 +17,8 @@ def generate_flamegraph_svg(collapsed_stacks: str, title: str = "CPU Flame Graph
             FLAMEGRAPH_PL,
             "--title",
             title,
+            "--width",
+            "1600",
             "--countname",
             "samples",
         ],

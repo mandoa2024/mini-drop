@@ -4,58 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Mini-Drop</title>
-  <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <header>
-    <div><strong>Mini-Drop</strong><span>性能采集与分析</span></div>
-    <button id="refresh">刷新</button>
-  </header>
-  <main>
-    <section class="panel">
-      <h2>创建 CPU 采样任务</h2>
-      <form id="task-form">
-        <label>Agent<select id="agent" required></select></label>
-        <label>目标 PID<input id="pid" type="number" min="1" value="1" required></label>
-        <label>采样时长（秒）<input id="duration" type="number" min="1" max="300" value="5" required></label>
-        <label>采样率（Hz）<input id="rate" type="number" min="1" max="999" value="99" required></label>
-        <button type="submit">开始采样</button>
-      </form>
-      <p id="message"></p>
-    </section>
-
-    <section class="panel">
-      <h2>Agent</h2>
-      <div id="agents" class="cards"></div>
-    </section>
-
-    <section class="panel">
-      <h2>Agent 审计日志</h2>
-      <table>
-        <thead><tr><th>Agent</th><th>事件</th><th>原因</th><th>时间</th></tr></thead>
-        <tbody id="agent-audits"></tbody>
-      </table>
-    </section>
-
-    <section class="panel">
-      <h2>任务</h2>
-      <table>
-        <thead><tr><th>ID</th><th>PID</th><th>状态</th><th>原因</th><th>时间</th></tr></thead>
-        <tbody id="tasks"></tbody>
-      </table>
-    </section>
-
-    <section class="panel" id="result-panel" hidden>
-      <h2>分析结果</h2>
-      <div id="timeline"></div>
-      <h3>性能指标</h3>
-      <div id="metrics" class="metric-grid"></div>
-      <h3>CPU 火焰图</h3>
-      <div id="flamegraph"></div>
-      <h3>Top 函数</h3>
-      <table><tbody id="top-functions"></tbody></table>
-    </section>
-  </main>
-  <script src="/app.js"></script>
+  <div id="root"></div>
+  <script type="module" src="/src/main.jsx"></script>
 </body>
 </html>

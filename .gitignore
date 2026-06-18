@@ -8,3 +8,5 @@ htmlcov/
 data/
 artifacts/
 .local/
+node_modules/
+dist/
