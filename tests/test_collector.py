@@ -4,7 +4,10 @@ from pathlib import Path
 import pytest
 
 from agent.collector import (
+    build_bpftrace_command,
     build_perf_command,
+    build_py_spy_command,
+    collapse_bpftrace_output,
     collapse_perf_script,
     collect_performance,
     demo_collapsed_stacks,
@@ -26,6 +29,29 @@ def test_build_perf_command_validates_arguments():
         build_perf_command(0, 5, 99, "/tmp/perf.data")
 
 
+def test_build_bpftrace_command_uses_profile_probe_and_pid_filter():
+    command = build_bpftrace_command(123, 10, 49)
+
+    assert command[:2] == ["bpftrace", "-e"]
+    assert "profile:hz:49" in command[2]
+    assert "kprobe:vfs_read" in command[2]
+    assert "/pid == 123/" in command[2]
+    assert "kstack" in command[2]
+
+
+def test_build_py_spy_command_records_raw_profile():
+    command = build_py_spy_command(123, 10, 49, "/tmp/py-spy.raw")
+
+    assert command == [
+        "py-spy", "record",
+        "-p", "123",
+        "-d", "10",
+        "-r", "49",
+        "-f", "raw",
+        "-o", "/tmp/py-spy.raw",
+    ]
+
+
 def test_demo_data_is_valid_collapsed_format():
     result = demo_collapsed_stacks(42)
     assert "process_42;main" in result
@@ -37,6 +63,12 @@ def test_collapse_perf_script():
     assert collapse_perf_script(raw) == "main;foo 1"
 
 
+def test_collapse_bpftrace_output():
+    raw = "@[\n    finish_task_switch+1\n    schedule+2\n]: 7\n"
+
+    assert collapse_bpftrace_output(raw) == "ebpf;kernel;schedule;finish_task_switch 7"
+
+
 def test_collect_performance_in_demo_mode_includes_cpu_and_memory():
     result = collect_performance(42, 5, 99, True)
 
@@ -44,6 +76,14 @@ def test_collect_performance_in_demo_mode_includes_cpu_and_memory():
     assert result["performance_data"]["cpu"]["collector"] == "perf"
     assert result["performance_data"]["cpu"]["sample_rate_hz"] == 99
     assert result["performance_data"]["memory"]["rss_kb"] > 0
+
+
+def test_collect_performance_in_demo_mode_supports_py_spy():
+    result = collect_performance(42, 5, 49, True, "py-spy")
+
+    assert "py-spy;python" in result["raw_data"]
+    assert result["performance_data"]["cpu"]["collector"] == "py-spy"
+    assert result["performance_data"]["cpu"]["event"] == "python-user-stack"
 
 
 def test_read_proc_memory_metrics_for_current_process():

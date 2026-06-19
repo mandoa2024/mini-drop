@@ -38,6 +38,7 @@ async def execute_task(client: httpx.AsyncClient, task: dict) -> None:
             task["duration_seconds"],
             task["sample_rate"],
             DEMO_MODE,
+            task.get("collector", "perf"),
         )
         response = await client.post(
             f"{SERVER_URL}/api/v1/agent/tasks/{task_id}/upload",
@@ -74,9 +75,50 @@ async def task_loop(client: httpx.AsyncClient) -> None:
         await asyncio.sleep(POLL_SECONDS)
 
 
+async def execute_profile_session(client: httpx.AsyncClient, session: dict) -> None:
+    session_id = session["id"]
+    try:
+        collected = await asyncio.to_thread(
+            collect_performance,
+            session["pid"],
+            session["segment_seconds"],
+            session["sample_rate"],
+            DEMO_MODE,
+            session["collector"],
+        )
+        segment = collected["performance_data"]["segment"]
+        response = await client.post(
+            f"{SERVER_URL}/api/v1/agent/profile-sessions/{session_id}/segments",
+            json={
+                "start_at": segment["start_at"],
+                "end_at": segment["end_at"],
+                "raw_data": collected["raw_data"],
+                "performance_data": collected["performance_data"],
+                "reason": f"{session['collector']} segment collected",
+            },
+            timeout=60,
+        )
+        response.raise_for_status()
+        log.info(json.dumps({"event": "profile_segment_uploaded", "session_id": session_id}))
+    except Exception as exc:
+        log.exception(json.dumps({"event": "profile_segment_failed", "session_id": session_id, "error": str(exc)}))
+
+
+async def profile_session_loop(client: httpx.AsyncClient) -> None:
+    while True:
+        try:
+            response = await client.get(f"{SERVER_URL}/api/v1/agent/{AGENT_ID}/profile-sessions")
+            response.raise_for_status()
+            for session in response.json():
+                await execute_profile_session(client, session)
+        except Exception as exc:
+            log.error(json.dumps({"event": "profile_session_poll_failed", "error": str(exc)}))
+        await asyncio.sleep(POLL_SECONDS)
+
+
 async def main() -> None:
     async with httpx.AsyncClient(timeout=15) as client:
-        await asyncio.gather(heartbeat_loop(client), task_loop(client))
+        await asyncio.gather(heartbeat_loop(client), task_loop(client), profile_session_loop(client))
 
 
 if __name__ == "__main__":

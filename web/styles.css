@@ -1,8 +1,9 @@
 :root { font-family: Inter, system-ui, sans-serif; color: #172033; background: #f3f6fa; }
 * { box-sizing: border-box; }
 body { margin: 0; }
-header { display: flex; justify-content: space-between; align-items: center; padding: 18px 5vw; color: white; background: #172033; }
-header span { margin-left: 12px; color: #a8b3c7; }
+.navbar { display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 14px 5vw; color: white; background: #172033; flex-wrap: wrap; }
+.brand { display: flex; align-items: baseline; gap: 12px; }
+.brand span { color: #a8b3c7; }
 main { width: min(1600px, 96vw); margin: 24px auto; display: grid; gap: 18px; }
 .panel { background: white; border: 1px solid #dfe5ee; border-radius: 10px; padding: 20px; box-shadow: 0 4px 16px #1720330a; overflow-x: auto; }
 h2, h3 { margin-top: 0; }
@@ -10,6 +11,12 @@ form { display: flex; gap: 14px; align-items: end; flex-wrap: wrap; }
 label { display: grid; gap: 6px; color: #566175; font-size: 13px; }
 input, select, button { min-height: 38px; border-radius: 6px; border: 1px solid #cbd4e1; padding: 0 11px; }
 button { background: #2457d6; color: white; border: 0; cursor: pointer; }
+button[type="button"] { background: #475467; }
+.mode-panel { display: grid; gap: 18px; }
+.mode-content { display: grid; gap: 14px; }
+.tabs { display: inline-flex; width: fit-content; max-width: 100%; padding: 4px; border: 1px solid #344054; border-radius: 8px; background: #101828; gap: 4px; }
+.tabs button { min-height: 34px; color: #cbd5e1; background: transparent; border-radius: 6px; white-space: nowrap; }
+.tabs button.active { color: white; background: #2457d6; }
 .cards { display: flex; gap: 12px; flex-wrap: wrap; }
 .card { min-width: 220px; border: 1px solid #dfe5ee; border-radius: 8px; padding: 14px; }
 .status { display: inline-block; border-radius: 999px; padding: 3px 9px; font-size: 12px; background: #e7ecf5; }
@@ -29,6 +36,8 @@ tr[data-id]:hover { background: #f6f8fc; }
 .metric { border: 1px solid #e8edf4; border-radius: 8px; padding: 11px; background: #f8fafc; }
 .metric span { display: block; margin-bottom: 6px; color: #566175; font-size: 12px; }
 .metric strong { font-size: 15px; }
+.language-profile td:first-child { color: #7a2e0e; font-weight: 600; }
+.kernel-profile td:first-child { color: #175cd3; font-weight: 600; }
 .tooltip-path { color: #667085; font-size: 12px; }
 #timeline { margin-bottom: 18px; color: #566175; font-size: 13px; }
 #message { min-height: 20px; color: #b42318; }

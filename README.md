@@ -117,5 +117,5 @@ python3 -m pytest -q
 
 - 当前原始折叠栈和分析结果直接存 PostgreSQL，下一阶段应迁移至 MinIO。
 - Web 使用 3 秒轮询，下一阶段替换为 SSE。
-- 已完成 perf MVP；eBPF、py-spy 和 Continuous Profiling 尚待实现。
+- 已完成 perf、bpftrace/eBPF、py-spy 三类采集器的 MVP，以及按 segment 切片上传的 Continuous Profiling 基础链路。
 - 当前 Agent 为保证考题复现使用高权限容器，不适合作为生产安全配置。
