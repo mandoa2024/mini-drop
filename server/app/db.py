@@ -13,6 +13,22 @@ pool = ConnectionPool(DATABASE_URL, min_size=1, max_size=10, open=False)
 
 def open_pool() -> None:
     pool.open(wait=True)
+    with connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            ALTER TABLE tasks
+                ADD COLUMN IF NOT EXISTS ebpf_probes JSONB
+                NOT NULL DEFAULT '["vfs_read"]'::jsonb
+            """
+        )
+        cur.execute(
+            """
+            ALTER TABLE profiling_sessions
+                ADD COLUMN IF NOT EXISTS ebpf_probes JSONB
+                NOT NULL DEFAULT '["vfs_read"]'::jsonb
+            """
+        )
+        conn.commit()
 
 
 def close_pool() -> None:
@@ -48,4 +64,3 @@ def transition_task(conn, task_id: str, target: str, reason: str, result=None) -
             (task_id, task["status"], target, reason.strip()),
         )
         return cur.execute("SELECT * FROM tasks WHERE id = %s", (task_id,)).fetchone()
-

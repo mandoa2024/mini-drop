@@ -68,6 +68,15 @@ services:
     volumes:
       - demo-runtime:/runtime
 
+  python-workload:
+    build:
+      context: .
+      dockerfile: examples/Python.Dockerfile
+    pid: host
+    restart: unless-stopped
+    volumes:
+      - demo-runtime:/runtime
+
   demo:
     build: ./server
     working_dir: /app

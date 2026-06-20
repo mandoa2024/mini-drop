@@ -88,6 +88,54 @@ sudo sysctl kernel.perf_event_paranoid=1
 
 本项目使用软件事件 `cpu-clock`，不依赖虚拟机暴露硬件 PMU。
 
+## eBPF 内核探针
+
+创建 eBPF 任务或持续采样 Session 时，可以同时选择以下探针：
+
+- `kprobe:vfs_read`：文件读取路径。
+- `kprobe:vfs_write`：文件写入路径。
+- `kprobe:tcp_sendmsg`：TCP 网络发送路径。
+
+系统还会独立执行 `profile:hz` 周期内核栈采样。每个 kprobe 使用独立
+bpftrace map，分析结果不会把事件次数与周期采样次数混合。具体内核函数能否
+挂载取决于目标 Linux 内核版本、符号可见性和 tracing 权限。
+
+## py-spy 演示
+
+Compose 包含一个持续运行、调用层级稳定的 Python CPU workload。启动项目后读取
+其宿主 PID：
+
+```bash
+docker compose exec python-workload cat /runtime/python-workload.pid
+```
+
+在 Web 中创建任务：
+
+```text
+采集器：py-spy / Python
+目标 PID：上一步输出的 PID
+采样时长：10 秒
+采样率：99 Hz
+```
+
+结果页应显示独立的 Python 调用树，主要路径包括：
+
+```text
+handle_request
+├── parse_payload
+│   ├── decode_request
+│   └── validate_payload
+└── serialize_response
+    └── render_template
+```
+
+如果任务失败，确认目标 PID 仍存在并检查 Agent 日志：
+
+```bash
+ps -fp "$(docker compose exec -T python-workload cat /runtime/python-workload.pid)"
+docker compose logs agent
+```
+
 ## 常用命令
 
 ```bash

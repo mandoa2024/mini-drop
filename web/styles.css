@@ -1,6 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap');
-
 @import "tailwindcss";
+
+@config "./tailwind.config.js";
 
 @layer base {
   * {
@@ -52,16 +53,4 @@
     transition: background 0.2s;
   }
   
-  /* Profile-specific tables */
-  .language-profile td:first-child {
-    color: #c2410c;
-    font-weight: 600;
-    font-family: 'Fira Code', monospace;
-  }
-  
-  .kernel-profile td:first-child {
-    color: #2563eb;
-    font-weight: 600;
-    font-family: 'Fira Code', monospace;
-  }
 }

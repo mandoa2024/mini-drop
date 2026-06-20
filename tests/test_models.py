@@ -7,6 +7,13 @@ def test_task_create_accepts_all_collectors():
     assert TaskCreate(agent_id="a", pid=1, collector="perf").collector == "perf"
     assert TaskCreate(agent_id="a", pid=1, collector="ebpf").collector == "ebpf"
     assert TaskCreate(agent_id="a", pid=1, collector="py-spy").collector == "py-spy"
+    assert TaskCreate(agent_id="a", pid=1).ebpf_probes == ["vfs_read"]
+    assert TaskCreate(
+        agent_id="a",
+        pid=1,
+        collector="ebpf",
+        ebpf_probes=["vfs_read", "vfs_write", "tcp_sendmsg"],
+    ).ebpf_probes == ["vfs_read", "vfs_write", "tcp_sendmsg"]
 
 
 def test_profile_session_defaults_to_low_frequency_perf():
@@ -15,6 +22,7 @@ def test_profile_session_defaults_to_low_frequency_perf():
     assert session.collector == "perf"
     assert session.sample_rate == 49
     assert session.segment_seconds == 30
+    assert session.ebpf_probes == ["vfs_read"]
 
 
 def test_profile_segment_upload_accepts_window_and_payload():

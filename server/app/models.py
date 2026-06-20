@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 
 CollectorName = Literal["perf", "ebpf", "py-spy"]
+EbpfProbeName = Literal["vfs_read", "vfs_write", "tcp_sendmsg"]
 
 
 class TaskCreate(BaseModel):
@@ -13,6 +14,9 @@ class TaskCreate(BaseModel):
     duration_seconds: int = Field(default=10, ge=1, le=300)
     sample_rate: int = Field(default=99, ge=1, le=999)
     collector: CollectorName = "perf"
+    ebpf_probes: list[EbpfProbeName] = Field(
+        default_factory=lambda: ["vfs_read"], min_length=1, max_length=3
+    )
 
 
 class Heartbeat(BaseModel):
@@ -38,6 +42,9 @@ class ProfileSessionCreate(BaseModel):
     collector: CollectorName = "perf"
     sample_rate: int = Field(default=49, ge=1, le=999)
     segment_seconds: int = Field(default=30, ge=1, le=300)
+    ebpf_probes: list[EbpfProbeName] = Field(
+        default_factory=lambda: ["vfs_read"], min_length=1, max_length=3
+    )
 
 
 class ProfileSegmentUpload(BaseModel):

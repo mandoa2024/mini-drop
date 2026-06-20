@@ -132,6 +132,82 @@ const COLLECTORS = [
   { value: "ebpf", label: "eBPF / bpftrace" },
   { value: "py-spy", label: "py-spy / Python" },
 ];
+const EBPF_PROBES = [
+  {
+    value: "vfs_read",
+    label: "文件读取",
+    technicalName: "kprobe:vfs_read",
+    description: "观察目标进程进入内核文件读取路径的次数和调用栈。",
+  },
+  {
+    value: "vfs_write",
+    label: "文件写入",
+    technicalName: "kprobe:vfs_write",
+    description: "观察目标进程进入内核文件写入路径的次数和调用栈。",
+  },
+  {
+    value: "tcp_sendmsg",
+    label: "网络发送",
+    technicalName: "kprobe:tcp_sendmsg",
+    description: "观察目标进程通过 TCP 发送数据时的内核调用栈。",
+  },
+];
+
+function EbpfProbeSelector({ value, onChange, accent = "primary" }) {
+  const toggle = (probe) => {
+    if (value.includes(probe)) {
+      if (value.length > 1) onChange(value.filter((item) => item !== probe));
+    } else {
+      onChange([...value, probe]);
+    }
+  };
+  const checkedClass =
+    accent === "accent"
+      ? "border-accent/60 bg-accent/10"
+      : "border-primary/60 bg-primary/10";
+  return (
+    <fieldset className="lg:col-span-3">
+      <legend className="text-sm font-medium text-slate-300 mb-2">
+        eBPF 内核探针（至少选择一个）
+      </legend>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        {EBPF_PROBES.map((probe) => {
+          const checked = value.includes(probe.value);
+          return (
+            <label
+              key={probe.value}
+              className={`cursor-pointer rounded-lg border p-3 transition-all ${
+                checked
+                  ? checkedClass
+                  : "border-slate-700 bg-slate-800/40 hover:border-slate-600"
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggle(probe.value)}
+                  className="mt-1"
+                />
+                <div>
+                  <strong className="block text-sm text-white">
+                    {probe.label}
+                  </strong>
+                  <span className="block text-xs font-mono text-slate-400 mt-1">
+                    {probe.technicalName}
+                  </span>
+                  <span className="block text-xs text-slate-500 mt-1">
+                    {probe.description}
+                  </span>
+                </div>
+              </div>
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+}
 
 async function api(path, options = {}) {
   const response = await fetch(API_BASE + path, {
@@ -261,6 +337,7 @@ function TaskForm({ agents, onCreated }) {
   const [duration, setDuration] = useState(5);
   const [sampleRate, setSampleRate] = useState(99);
   const [collector, setCollector] = useState("perf");
+  const [ebpfProbes, setEbpfProbes] = useState(["vfs_read"]);
   const [message, setMessage] = useState("");
 
   useEffect(() => {
@@ -278,6 +355,7 @@ function TaskForm({ agents, onCreated }) {
           duration_seconds: Number(duration),
           sample_rate: Number(sampleRate),
           collector,
+          ebpf_probes: ebpfProbes,
         }),
       });
       setMessage("任务已创建");
@@ -337,6 +415,9 @@ function TaskForm({ agents, onCreated }) {
             ))}
           </select>
         </label>
+        {collector === "ebpf" && (
+          <EbpfProbeSelector value={ebpfProbes} onChange={setEbpfProbes} />
+        )}
         <label className="flex flex-col gap-2">
           <span className="text-sm font-medium text-slate-300">目标 PID</span>
           <input
@@ -657,12 +738,385 @@ function Flamegraph({ result }) {
   );
 }
 
+function getResultCollector(result, fallback = "perf") {
+  return (
+    result?.metrics?.cpu?.collector ||
+    result?.metrics?.collector ||
+    result?.session?.collector ||
+    fallback
+  );
+}
+
+function collectLeafStacks(root) {
+  const stacks = [];
+  const walk = (node, path) => {
+    const nextPath =
+      node.name === "root" ? path : [...path, { name: node.name, value: node.value }];
+    if (!node.children?.length && nextPath.length) {
+      stacks.push({ frames: nextPath, samples: node.value });
+      return;
+    }
+    (node.children || []).forEach((child) => walk(child, nextPath));
+  };
+  if (root) walk(root, []);
+  return stacks.sort((left, right) => right.samples - left.samples);
+}
+
+function TopFunctions({ items, title, variant }) {
+  const colorClass =
+    variant === "python"
+      ? "text-amber-300"
+      : variant === "kernel"
+        ? "text-cyan-300"
+        : "text-orange-400";
+  return (
+    <>
+      <h3 className="text-md font-semibold text-white mt-6 mb-3">{title}</h3>
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <tbody>
+            {(items || []).map((item) => (
+              <tr
+                key={item.name}
+                className="border-b border-slate-700/50 hover:bg-slate-700/30 transition-colors duration-150"
+              >
+                <td className={`py-3 px-4 text-sm font-mono ${colorClass}`}>
+                  {item.name}
+                </td>
+                <td className="py-3 px-4 text-sm text-slate-400 text-right">
+                  {item.samples} samples
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+function KernelTopFrames({ items, title, countUnit }) {
+  return (
+    <>
+      <h3 className="text-md font-semibold text-white mt-6 mb-3">{title}</h3>
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <tbody>
+            {(items || []).map((item) => (
+              <tr
+                key={item.name}
+                className="border-b border-slate-700/50 hover:bg-slate-700/30 transition-colors duration-150"
+              >
+                <td className="py-3 px-4 text-sm font-mono text-cyan-300">
+                  {item.name}
+                </td>
+                <td className="py-3 px-4 text-sm text-slate-400 text-right">
+                  {item.samples} {countUnit}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+function KernelStackGroup({
+  title,
+  badge,
+  description,
+  result,
+  tone,
+  countUnit,
+  sourceName,
+}) {
+  const stacks = collectLeafStacks(result?.flamegraph);
+  const maxSamples = Math.max(1, ...stacks.map((stack) => stack.samples));
+  const isProbe = tone === "probe";
+  const colorClasses = isProbe
+    ? {
+        border: "border-cyan-500/30",
+        badge:
+          "text-cyan-300 border-cyan-500/40 bg-cyan-500/10",
+        fill: "from-cyan-500/20 to-blue-500/5",
+        frame:
+          "text-cyan-100 border-cyan-800/70 bg-cyan-950/60",
+        samples: "text-cyan-300",
+      }
+    : {
+        border: "border-violet-500/30",
+        badge:
+          "text-violet-300 border-violet-500/40 bg-violet-500/10",
+        fill: "from-violet-500/20 to-fuchsia-500/5",
+        frame:
+          "text-violet-100 border-violet-800/70 bg-violet-950/60",
+        samples: "text-violet-300",
+      };
+  return (
+    <section className={`rounded-xl border ${colorClasses.border} bg-slate-950/60 p-4`}>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-1">
+        <h4 className="text-sm font-semibold text-white m-0">{title}</h4>
+        <span
+          className={`text-xs font-mono border rounded-full px-3 py-1 ${colorClasses.badge}`}
+        >
+          {badge}
+        </span>
+      </div>
+      <p className="text-xs text-slate-400 mt-0 mb-4">{description}</p>
+      <div className="space-y-3">
+        {stacks.length === 0 ? (
+          <p className="text-sm text-slate-500 text-center py-6">
+            该来源暂无采样数据
+          </p>
+        ) : stacks.map((stack, index) => (
+          <div
+            key={`${stack.frames.map((frame) => frame.name).join(";")}-${index}`}
+            className="relative overflow-hidden rounded-lg border border-slate-700 bg-slate-900/80 p-3"
+          >
+            <div
+              className={`absolute inset-y-0 left-0 bg-gradient-to-r ${colorClasses.fill}`}
+              style={{ width: `${(stack.samples / maxSamples) * 100}%` }}
+            />
+            <div className="relative flex flex-wrap items-center gap-2">
+              {stack.frames
+                .filter(
+                  (frame) =>
+                    !["ebpf", "kernel", sourceName].includes(frame.name),
+                )
+                .map((frame, frameIndex) => (
+                  <React.Fragment key={`${frame.name}-${frameIndex}`}>
+                    {frameIndex > 0 && (
+                      <span className="text-slate-600" aria-hidden="true">
+                        →
+                      </span>
+                    )}
+                    <span
+                      className={`font-mono text-xs border rounded px-2 py-1 ${colorClasses.frame}`}
+                    >
+                      {frame.name}
+                    </span>
+                  </React.Fragment>
+                ))}
+              <strong
+                className={`ml-auto text-xs font-mono ${colorClasses.samples}`}
+              >
+                {stack.samples} {countUnit}
+              </strong>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function KernelProbeVisualization({ result }) {
+  const sources = result.ebpf_sources;
+  const normalizedSources = { ...(sources || {}) };
+  if (normalizedSources.kprobe && !normalizedSources["kprobe:vfs_read"]) {
+    normalizedSources["kprobe:vfs_read"] = normalizedSources.kprobe;
+  }
+  if (normalizedSources.profile && !normalizedSources["profile:hz"]) {
+    normalizedSources["profile:hz"] = normalizedSources.profile;
+  }
+  const selectedProbes =
+    result.metrics?.cpu?.ebpf_probes ||
+    result.metrics?.ebpf_probes ||
+    Object.keys(normalizedSources)
+      .filter((name) => name.startsWith("kprobe:"))
+      .map((name) => name.slice("kprobe:".length));
+  const probeEntries = selectedProbes.map((probe) => {
+    const source = `kprobe:${probe}`;
+    return [source, normalizedSources[source]];
+  });
+  const profileEntry = [
+    "profile:hz",
+    normalizedSources["profile:hz"],
+  ];
+  const hasSeparatedSources = Boolean(sources);
+  const probeDetails = Object.fromEntries(
+    EBPF_PROBES.map((probe) => [probe.technicalName, probe]),
+  );
+  return (
+    <>
+      <h3 className="text-md font-semibold text-white mt-6 mb-3">
+        eBPF 内核采集结果
+      </h3>
+      {hasSeparatedSources ? (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          {probeEntries.map(([source, sourceResult]) => (
+            <KernelStackGroup
+              key={source}
+              title={probeDetails[source]?.label || "内核探针事件"}
+              badge={source}
+              description={
+                probeDetails[source]?.description ||
+                `统计目标进程触发 ${source} 时捕获的内核调用栈。`
+              }
+              result={sourceResult}
+              tone="probe"
+              countUnit="events"
+              sourceName={source}
+            />
+          ))}
+          {profileEntry && (
+            <KernelStackGroup
+              title="周期内核采样"
+              badge={profileEntry[0]}
+              description="按配置频率采集目标进程当时所在的内核调用栈。"
+              result={profileEntry[1]}
+              tone="profile"
+              countUnit="samples"
+              sourceName={profileEntry[0]}
+            />
+          )}
+        </div>
+      ) : (
+        <KernelStackGroup
+          title="兼容模式内核栈"
+          badge="legacy mixed sources"
+          description="该结果由旧版采集器产生，无法区分 kprobe 与 profile 来源。"
+          result={result}
+          tone="probe"
+          countUnit="counts"
+          sourceName=""
+        />
+      )}
+      {hasSeparatedSources && (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-x-4">
+          {probeEntries.map(([source, sourceResult]) => (
+            <div key={source}>
+              <KernelTopFrames
+                items={sourceResult.top_functions}
+                title={`${probeDetails[source]?.label || source} Top Frames`}
+                countUnit="events"
+              />
+            </div>
+          ))}
+          {profileEntry && (
+            <div>
+              <KernelTopFrames
+                items={profileEntry[1].top_functions}
+                title="周期采样 Top Frames"
+                countUnit="samples"
+              />
+            </div>
+          )}
+        </div>
+      )}
+      {!hasSeparatedSources && (
+        <TopFunctions
+          items={result.top_functions}
+          title="Top Kernel Frames"
+          variant="kernel"
+        />
+      )}
+    </>
+  );
+}
+
+function PythonCallNode({ node, depth = 0, total = 1, path = "root" }) {
+  if (["py-spy", "python"].includes(node.name)) {
+    return (node.children || []).map((child, index) => (
+      <PythonCallNode
+        key={`${path}-${child.name}-${index}`}
+        node={child}
+        depth={depth}
+        total={total}
+        path={`${path}-${child.name}-${index}`}
+      />
+    ));
+  }
+  const percentage = Math.max(2, (node.value / total) * 100);
+  return (
+    <div className="relative" style={{ marginLeft: `${Math.min(depth, 8) * 20}px` }}>
+      <div className="absolute bottom-0 left-[-12px] top-0 border-l border-amber-500/30" />
+      <div className="relative overflow-hidden rounded-lg border border-amber-500/25 bg-slate-900/80 px-3 py-2">
+        <div
+          className="absolute inset-y-0 left-0 bg-gradient-to-r from-amber-500/25 to-orange-500/5"
+          style={{ width: `${percentage}%` }}
+        />
+        <div className="relative flex items-center justify-between gap-3">
+          <span className="font-mono text-sm text-amber-100">{node.name}</span>
+          <span className="shrink-0 font-mono text-xs text-amber-300">
+            {node.value} samples
+          </span>
+        </div>
+      </div>
+      {(node.children || []).map((child, index) => (
+        <div className="mt-2" key={`${path}-${child.name}-${index}`}>
+          <PythonCallNode
+            node={child}
+            depth={depth + 1}
+            total={total}
+            path={`${path}-${child.name}-${index}`}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PythonStackVisualization({ result }) {
+  const root = result.flamegraph;
+  return (
+    <>
+      <div className="flex items-center justify-between mt-6 mb-3">
+        <h3 className="text-md font-semibold text-white m-0">
+          Python 调用树
+        </h3>
+        <span className="text-xs font-mono text-amber-300 border border-amber-500/40 bg-amber-500/10 rounded-full px-3 py-1">
+          py-spy · interpreter frames
+        </span>
+      </div>
+      <div className="rounded-xl border border-amber-500/30 bg-slate-950/60 p-4 space-y-2 overflow-x-auto">
+        {(root?.children || []).map((child, index) => (
+          <PythonCallNode
+            key={`${child.name}-${index}`}
+            node={child}
+            total={root.value}
+            path={`${child.name}-${index}`}
+          />
+        ))}
+      </div>
+      <TopFunctions
+        items={result.top_functions}
+        title="Top Python Functions"
+        variant="python"
+      />
+    </>
+  );
+}
+
+function CollectorVisualization({ result, fallbackCollector = "perf" }) {
+  const collector = getResultCollector(result, fallbackCollector);
+  if (collector === "py-spy") {
+    return <PythonStackVisualization result={result} />;
+  }
+  if (collector === "ebpf") {
+    return <KernelProbeVisualization result={result} />;
+  }
+  return (
+    <>
+      <h3 className="text-md font-semibold text-white mt-6 mb-3">
+        CPU 火焰图
+      </h3>
+      <Flamegraph result={result} />
+      <TopFunctions items={result.top_functions} title="Top 函数" variant="perf" />
+    </>
+  );
+}
+
 function ResultPanel({ task }) {
   if (!task) return null;
-  const timeline = (task.events || [])
-    .map((event) => `${event.to_status}: ${event.reason}`)
-    .join(" → ");
   if (!task.result) {
+    const pendingTitle =
+      task.collector === "py-spy"
+        ? "Python 调用树"
+        : task.collector === "ebpf"
+          ? "eBPF 内核探针栈"
+          : "CPU 火焰图";
     return (
       <section className="bg-slate-800/30 backdrop-blur-sm border border-slate-700/50 rounded-xl p-6 shadow-xl">
         <div className="flex items-center gap-3 mb-4">
@@ -671,10 +1125,7 @@ function ResultPanel({ task }) {
           </div>
           <h2 className="text-lg font-semibold text-white m-0">分析结果</h2>
         </div>
-        <div className="mb-6 p-4 bg-slate-700/30 rounded-lg border border-slate-600/50">
-          <p className="text-sm text-slate-400 font-mono">{timeline}</p>
-        </div>
-        <h3 className="text-md font-semibold text-white mb-3">CPU 火焰图</h3>
+        <h3 className="text-md font-semibold text-white mb-3">{pendingTitle}</h3>
         <div className="w-full min-h-[400px] border border-slate-700 rounded-lg bg-slate-800/50 flex items-center justify-center">
           <p className="text-slate-400">任务尚未完成，正在处理中...</p>
         </div>
@@ -690,33 +1141,12 @@ function ResultPanel({ task }) {
         </div>
         <h2 className="text-lg font-semibold text-white m-0">分析结果</h2>
       </div>
-      <div className="mb-6 p-4 bg-slate-700/30 rounded-lg border border-slate-600/50">
-        <p className="text-sm text-slate-400 font-mono">{timeline}</p>
-      </div>
       <h3 className="text-md font-semibold text-white mb-3">性能指标</h3>
       <Metrics metrics={metrics} />
-      <h3 className="text-md font-semibold text-white mt-6 mb-3">CPU 火焰图</h3>
-      <Flamegraph result={task.result} />
-      <h3 className="text-md font-semibold text-white mt-6 mb-3">Top 函数</h3>
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <tbody>
-            {(task.result.top_functions || []).map((item) => (
-              <tr
-                key={item.name}
-                className="border-b border-slate-700/50 hover:bg-slate-700/30 transition-colors duration-150"
-              >
-                <td className="py-3 px-4 text-sm text-orange-400 font-mono">
-                  {item.name}
-                </td>
-                <td className="py-3 px-4 text-sm text-slate-400 text-right">
-                  {item.samples} samples
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <CollectorVisualization
+        result={task.result}
+        fallbackCollector={task.collector}
+      />
     </section>
   );
 }
@@ -725,6 +1155,7 @@ function ContinuousForm({ agents, onCreated }) {
   const [agentId, setAgentId] = useState("");
   const [pid, setPid] = useState(1);
   const [collector, setCollector] = useState("perf");
+  const [ebpfProbes, setEbpfProbes] = useState(["vfs_read"]);
   const [sampleRate, setSampleRate] = useState(49);
   const [segmentSeconds, setSegmentSeconds] = useState(30);
   const [message, setMessage] = useState("");
@@ -742,6 +1173,7 @@ function ContinuousForm({ agents, onCreated }) {
           agent_id: agentId,
           pid: Number(pid),
           collector,
+          ebpf_probes: ebpfProbes,
           sample_rate: Number(sampleRate),
           segment_seconds: Number(segmentSeconds),
         }),
@@ -803,6 +1235,13 @@ function ContinuousForm({ agents, onCreated }) {
             ))}
           </select>
         </label>
+        {collector === "ebpf" && (
+          <EbpfProbeSelector
+            value={ebpfProbes}
+            onChange={setEbpfProbes}
+            accent="accent"
+          />
+        )}
         <label className="flex flex-col gap-2">
           <span className="text-sm font-medium text-slate-300">目标 PID</span>
           <input
@@ -990,50 +1429,6 @@ function ProfileWindowMetrics({ result }) {
         </div>
       ))}
     </div>
-  );
-}
-
-function CollectorVisualization({ result }) {
-  const collector =
-    result.metrics?.collector || result.session?.collector || "perf";
-  const title =
-    collector === "py-spy"
-      ? "Python 用户态栈"
-      : collector === "ebpf"
-        ? "eBPF Kernel Stack"
-        : "CPU 火焰图";
-  const topTitle =
-    collector === "py-spy"
-      ? "Top Python Functions"
-      : collector === "ebpf"
-        ? "Top Kernel Frames"
-        : "Top 函数";
-
-  return (
-    <>
-      <h3 className="text-md font-semibold text-white mt-6 mb-3">{title}</h3>
-      <Flamegraph result={result} />
-      <h3 className="text-md font-semibold text-white mt-6 mb-3">{topTitle}</h3>
-      <div className="overflow-x-auto">
-        <table
-          className={`w-full ${collector === "py-spy" ? "language-profile" : collector === "ebpf" ? "kernel-profile" : ""}`}
-        >
-          <tbody>
-            {(result.top_functions || []).map((item) => (
-              <tr
-                key={item.name}
-                className="border-b border-slate-700/50 hover:bg-slate-700/30 transition-colors duration-150"
-              >
-                <td className="py-3 px-4 text-sm font-mono">{item.name}</td>
-                <td className="py-3 px-4 text-sm text-slate-400 text-right">
-                  {item.samples} samples
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </>
   );
 }
 

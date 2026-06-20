@@ -4,6 +4,13 @@ import tempfile
 from datetime import datetime, timezone
 
 
+EBPF_PROBES = {
+    "vfs_read": "vfs_read",
+    "vfs_write": "vfs_write",
+    "tcp_sendmsg": "tcp_sendmsg",
+}
+
+
 def build_perf_command(pid: int, duration: int, sample_rate: int, output: str) -> list[str]:
     if pid <= 0 or duration <= 0 or sample_rate <= 0:
         raise ValueError("pid, duration and sample_rate must be positive")
@@ -90,28 +97,73 @@ def collect_perf(pid: int, duration: int, sample_rate: int, demo_mode: bool) -> 
         return collapse_perf_script(script.stdout)
 
 
-def build_bpftrace_command(pid: int, duration: int, sample_rate: int) -> list[str]:
+def normalize_ebpf_probes(probes: list[str] | None) -> list[str]:
+    selected = probes or ["vfs_read"]
+    invalid = sorted(set(selected) - EBPF_PROBES.keys())
+    if invalid:
+        raise ValueError(f"unsupported eBPF probes: {', '.join(invalid)}")
+    return list(dict.fromkeys(selected))
+
+
+def build_bpftrace_command(
+    pid: int,
+    duration: int,
+    sample_rate: int,
+    probes: list[str] | None = None,
+) -> list[str]:
     if pid <= 0 or duration <= 0 or sample_rate <= 0:
         raise ValueError("pid, duration and sample_rate must be positive")
-    program = (
-        f"kprobe:vfs_read /pid == {pid}/ {{ @[kstack] = count(); }} "
-        f"profile:hz:{sample_rate} /pid == {pid}/ {{ @[kstack] = count(); }} "
-        f"interval:s:{duration} {{ print(@); clear(@); exit(); }}"
+    selected = normalize_ebpf_probes(probes)
+    clauses = [
+        (
+            f"kprobe:{EBPF_PROBES[probe]} /pid == {pid}/ "
+            f"{{ @kprobe_{probe}[kstack] = count(); }}"
+        )
+        for probe in selected
+    ]
+    clauses.append(
+        f"profile:hz:{sample_rate} /pid == {pid}/ "
+        "{ @profile_hz[kstack] = count(); }"
     )
+    maps = [f"@kprobe_{probe}" for probe in selected] + ["@profile_hz"]
+    print_and_clear = " ".join(
+        [f"print({map_name});" for map_name in maps]
+        + [f"clear({map_name});" for map_name in maps]
+    )
+    clauses.append(
+        f"interval:s:{duration} {{ {print_and_clear} exit(); }}"
+    )
+    program = " ".join(clauses)
     return ["bpftrace", "-e", program]
 
 
-def collect_bpftrace(pid: int, duration: int, sample_rate: int, demo_mode: bool) -> str:
+def collect_bpftrace(
+    pid: int,
+    duration: int,
+    sample_rate: int,
+    demo_mode: bool,
+    probes: list[str] | None = None,
+) -> str:
+    selected = normalize_ebpf_probes(probes)
     if demo_mode:
-        return "\n".join(
+        probe_frames = {
+            "vfs_read": "do_syscall_64;vfs_read",
+            "vfs_write": "do_syscall_64;vfs_write",
+            "tcp_sendmsg": "sock_sendmsg;tcp_sendmsg",
+        }
+        lines = [
+            f"ebpf;kprobe:{probe};kernel;{probe_frames[probe]} {11 + index * 5}"
+            for index, probe in enumerate(selected)
+        ]
+        lines.extend(
             [
-                f"ebpf;kernel;vmlinux;finish_task_switch 23",
-                f"ebpf;kernel;vmlinux;schedule 17",
-                f"ebpf;kernel;vfs_read 11",
+                "ebpf;profile:hz;kernel;vmlinux;finish_task_switch 23",
+                "ebpf;profile:hz;kernel;vmlinux;schedule 17",
             ]
         )
+        return "\n".join(lines)
     result = subprocess.run(
-        build_bpftrace_command(pid, duration, sample_rate),
+        build_bpftrace_command(pid, duration, sample_rate, selected),
         check=False,
         capture_output=True,
         text=True,
@@ -125,16 +177,29 @@ def collect_bpftrace(pid: int, duration: int, sample_rate: int, demo_mode: bool)
 def collapse_bpftrace_output(raw: str) -> str:
     stacks = []
     frames = []
+    source = None
     for line in raw.splitlines():
         stripped = line.strip()
-        if not stripped or stripped.startswith("@["):
+        if not stripped:
+            frames = []
+            continue
+        if stripped.startswith("@kprobe_") and stripped.endswith("["):
+            source = f"kprobe:{stripped[len('@kprobe_'):-1]}"
+            frames = []
+            continue
+        if stripped.startswith("@profile_hz["):
+            source = "profile:hz"
             frames = []
             continue
         if stripped.startswith("]:"):
             count = int(stripped.split(":", 1)[1].strip())
-            if frames and count > 0:
-                stacks.append(";".join(["ebpf", "kernel", *reversed(frames)]) + f" {count}")
+            if source and frames and count > 0:
+                stacks.append(
+                    ";".join(["ebpf", source, "kernel", *reversed(frames)])
+                    + f" {count}"
+                )
             frames = []
+            source = None
             continue
         if stripped.startswith("@:"):
             continue
@@ -208,19 +273,45 @@ def collapse_perf_script(raw: str) -> str:
     return "\n".join(stacks)
 
 
-def collect_stacks(pid: int, duration: int, sample_rate: int, demo_mode: bool, collector: str) -> str:
+def collect_stacks(
+    pid: int,
+    duration: int,
+    sample_rate: int,
+    demo_mode: bool,
+    collector: str,
+    ebpf_probes: list[str] | None = None,
+) -> str:
     if collector == "perf":
         return collect_perf(pid, duration, sample_rate, demo_mode)
     if collector == "ebpf":
-        return collect_bpftrace(pid, duration, sample_rate, demo_mode)
+        return collect_bpftrace(
+            pid, duration, sample_rate, demo_mode, ebpf_probes
+        )
     if collector == "py-spy":
         return collect_py_spy(pid, duration, sample_rate, demo_mode)
     raise ValueError(f"unsupported collector: {collector}")
 
 
-def collect_performance(pid: int, duration: int, sample_rate: int, demo_mode: bool, collector: str = "perf") -> dict:
+def collect_performance(
+    pid: int,
+    duration: int,
+    sample_rate: int,
+    demo_mode: bool,
+    collector: str = "perf",
+    ebpf_probes: list[str] | None = None,
+) -> dict:
     start_at = datetime.now(timezone.utc)
-    collapsed_stacks = collect_stacks(pid, duration, sample_rate, demo_mode, collector)
+    selected_probes = (
+        normalize_ebpf_probes(ebpf_probes) if collector == "ebpf" else []
+    )
+    collapsed_stacks = collect_stacks(
+        pid,
+        duration,
+        sample_rate,
+        demo_mode,
+        collector,
+        selected_probes,
+    )
     end_at = datetime.now(timezone.utc)
     memory = demo_memory_metrics(pid) if demo_mode else read_proc_memory_metrics(pid)
     return {
@@ -232,6 +323,20 @@ def collect_performance(pid: int, duration: int, sample_rate: int, demo_mode: bo
                 "duration_seconds": duration,
                 "sample_rate_hz": sample_rate,
                 "collapsed_stack_lines": len(collapsed_stacks.splitlines()),
+                **(
+                    {
+                        "probes": [
+                            {"source": "kprobe", "event": probe}
+                            for probe in selected_probes
+                        ]
+                        + [
+                            {"source": "profile", "event": "hz"},
+                        ],
+                        "ebpf_probes": selected_probes,
+                    }
+                    if collector == "ebpf"
+                    else {}
+                ),
             },
             "memory": memory,
             "segment": {

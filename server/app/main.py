@@ -129,10 +129,22 @@ def create_task(body: TaskCreate):
             raise HTTPException(404, "agent not found")
         cur.execute(
             """
-            INSERT INTO tasks(id, agent_id, pid, duration_seconds, sample_rate, collector, status, status_reason)
-            VALUES (%s, %s, %s, %s, %s, %s, 'PENDING', %s)
+            INSERT INTO tasks(
+                id, agent_id, pid, duration_seconds, sample_rate, collector,
+                ebpf_probes, status, status_reason
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, 'PENDING', %s)
             """,
-            (task_id, body.agent_id, body.pid, body.duration_seconds, body.sample_rate, body.collector, reason),
+            (
+                task_id,
+                body.agent_id,
+                body.pid,
+                body.duration_seconds,
+                body.sample_rate,
+                body.collector,
+                json.dumps(body.ebpf_probes),
+                reason,
+            ),
         )
         cur.execute(
             "INSERT INTO task_events(task_id, from_status, to_status, reason) VALUES (%s, NULL, 'PENDING', %s)",
@@ -161,10 +173,10 @@ def create_profile_session(body: ProfileSessionCreate):
         cur.execute(
             """
             INSERT INTO profiling_sessions(
-                id, agent_id, pid, collector, sample_rate,
+                id, agent_id, pid, collector, sample_rate, ebpf_probes,
                 segment_seconds, status, status_reason
             )
-            VALUES (%s, %s, %s, %s, %s, %s, 'RUNNING', %s)
+            VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s, 'RUNNING', %s)
             """,
             (
                 session_id,
@@ -172,6 +184,7 @@ def create_profile_session(body: ProfileSessionCreate):
                 body.pid,
                 body.collector,
                 body.sample_rate,
+                json.dumps(body.ebpf_probes),
                 body.segment_seconds,
                 reason,
             ),
@@ -278,6 +291,7 @@ async def analyze_profile_window(
     performance_data = {
         "collector": session["collector"],
         "pid": session["pid"],
+        "ebpf_probes": session.get("ebpf_probes") or ["vfs_read"],
         "window": {
             "from": from_at.isoformat(),
             "to": to_at.isoformat(),

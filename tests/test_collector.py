@@ -30,13 +30,21 @@ def test_build_perf_command_validates_arguments():
 
 
 def test_build_bpftrace_command_uses_profile_probe_and_pid_filter():
-    command = build_bpftrace_command(123, 10, 49)
+    command = build_bpftrace_command(
+        123, 10, 49, ["vfs_read", "vfs_write", "tcp_sendmsg"]
+    )
 
     assert command[:2] == ["bpftrace", "-e"]
     assert "profile:hz:49" in command[2]
     assert "kprobe:vfs_read" in command[2]
+    assert "kprobe:vfs_write" in command[2]
+    assert "kprobe:tcp_sendmsg" in command[2]
     assert "/pid == 123/" in command[2]
     assert "kstack" in command[2]
+    assert "@kprobe_vfs_read[kstack]" in command[2]
+    assert "@kprobe_vfs_write[kstack]" in command[2]
+    assert "@kprobe_tcp_sendmsg[kstack]" in command[2]
+    assert "@profile_hz[kstack]" in command[2]
 
 
 def test_build_py_spy_command_records_raw_profile():
@@ -64,9 +72,46 @@ def test_collapse_perf_script():
 
 
 def test_collapse_bpftrace_output():
-    raw = "@[\n    finish_task_switch+1\n    schedule+2\n]: 7\n"
+    raw = (
+        "@kprobe_vfs_read[\n"
+        "    vfs_read+1\n"
+        "    do_syscall_64+2\n"
+        "]: 3\n"
+        "@profile_hz[\n"
+        "    finish_task_switch+1\n"
+        "    schedule+2\n"
+        "]: 7\n"
+        "@kprobe_tcp_sendmsg[\n"
+        "    tcp_sendmsg+1\n"
+        "    sock_sendmsg+2\n"
+        "]: 5\n"
+    )
 
-    assert collapse_bpftrace_output(raw) == "ebpf;kernel;schedule;finish_task_switch 7"
+    assert collapse_bpftrace_output(raw) == (
+        "ebpf;kprobe:vfs_read;kernel;do_syscall_64;vfs_read 3\n"
+        "ebpf;profile:hz;kernel;schedule;finish_task_switch 7\n"
+        "ebpf;kprobe:tcp_sendmsg;kernel;sock_sendmsg;tcp_sendmsg 5"
+    )
+
+
+def test_collect_performance_demo_supports_multiple_ebpf_probes():
+    result = collect_performance(
+        42,
+        5,
+        49,
+        True,
+        "ebpf",
+        ["vfs_read", "vfs_write", "tcp_sendmsg"],
+    )
+
+    assert "ebpf;kprobe:vfs_read" in result["raw_data"]
+    assert "ebpf;kprobe:vfs_write" in result["raw_data"]
+    assert "ebpf;kprobe:tcp_sendmsg" in result["raw_data"]
+    assert result["performance_data"]["cpu"]["ebpf_probes"] == [
+        "vfs_read",
+        "vfs_write",
+        "tcp_sendmsg",
+    ]
 
 
 def test_collect_performance_in_demo_mode_includes_cpu_and_memory():

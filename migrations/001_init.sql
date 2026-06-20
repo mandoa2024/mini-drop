@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     duration_seconds INTEGER NOT NULL CHECK (duration_seconds BETWEEN 1 AND 300),
     sample_rate INTEGER NOT NULL CHECK (sample_rate BETWEEN 1 AND 999),
     collector TEXT NOT NULL DEFAULT 'perf' CHECK (collector IN ('perf', 'ebpf', 'py-spy')),
+    ebpf_probes JSONB NOT NULL DEFAULT '["vfs_read"]'::jsonb,
     status TEXT NOT NULL CHECK (status IN ('PENDING', 'RUNNING', 'UPLOADING', 'DONE', 'FAILED')),
     status_reason TEXT NOT NULL CHECK (length(status_reason) > 0),
     raw_data TEXT,
@@ -33,6 +34,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 );
 
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS performance_data JSONB;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS ebpf_probes JSONB NOT NULL DEFAULT '["vfs_read"]'::jsonb;
 ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_collector_check;
 ALTER TABLE tasks ADD CONSTRAINT tasks_collector_check CHECK (collector IN ('perf', 'ebpf', 'py-spy'));
 
@@ -54,6 +56,7 @@ CREATE TABLE IF NOT EXISTS profiling_sessions (
     agent_id TEXT NOT NULL REFERENCES agents(id),
     pid INTEGER NOT NULL CHECK (pid > 0),
     collector TEXT NOT NULL CHECK (collector IN ('perf', 'ebpf', 'py-spy')),
+    ebpf_probes JSONB NOT NULL DEFAULT '["vfs_read"]'::jsonb,
     sample_rate INTEGER NOT NULL CHECK (sample_rate BETWEEN 1 AND 999),
     segment_seconds INTEGER NOT NULL CHECK (segment_seconds BETWEEN 1 AND 300),
     status TEXT NOT NULL CHECK (status IN ('RUNNING', 'STOPPED', 'FAILED')),

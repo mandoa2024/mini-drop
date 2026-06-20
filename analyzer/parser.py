@@ -44,3 +44,21 @@ def top_functions(raw: str, limit: int = 10) -> list[dict]:
         for name, samples in sorted(totals.items(), key=lambda item: (-item[1], item[0]))[:limit]
     ]
 
+
+def split_ebpf_sources(raw: str) -> dict[str, str]:
+    sources: dict[str, list[str]] = {}
+    for line in raw.splitlines():
+        if not line.strip():
+            continue
+        frames, _count = parse_collapsed_line(line)
+        if len(frames) < 2 or frames[0] != "ebpf":
+            continue
+        source = frames[1]
+        if source.startswith("kprobe:"):
+            group = source
+        elif source.startswith("profile:"):
+            group = source
+        else:
+            continue
+        sources.setdefault(group, []).append(line)
+    return {name: "\n".join(lines) for name, lines in sources.items()}

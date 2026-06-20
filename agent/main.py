@@ -39,6 +39,7 @@ async def execute_task(client: httpx.AsyncClient, task: dict) -> None:
             task["sample_rate"],
             DEMO_MODE,
             task.get("collector", "perf"),
+            task.get("ebpf_probes"),
         )
         response = await client.post(
             f"{SERVER_URL}/api/v1/agent/tasks/{task_id}/upload",
@@ -85,6 +86,7 @@ async def execute_profile_session(client: httpx.AsyncClient, session: dict) -> N
             session["sample_rate"],
             DEMO_MODE,
             session["collector"],
+            session.get("ebpf_probes"),
         )
         segment = collected["performance_data"]["segment"]
         response = await client.post(
