@@ -123,6 +123,23 @@ const StopIcon = ({ strokeColor = "currentColor" }) => (
   </svg>
 );
 
+const CloseIcon = () => (
+  <svg
+    width="20"
+    height="20"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    aria-hidden="true"
+  >
+    <path
+      d="M6 6l12 12M18 6L6 18"
+      strokeWidth="2"
+      strokeLinecap="round"
+    />
+  </svg>
+);
+
 const API_BASE =
   window.location.port === "3000"
     ? `${window.location.protocol}//${window.location.hostname}:8080`
@@ -478,98 +495,131 @@ function TaskForm({ agents, onCreated }) {
   );
 }
 
-function AgentCards({ agents }) {
-  return (
-    <section className="bg-slate-800/30 backdrop-blur-sm border border-slate-700/50 rounded-xl p-6 shadow-xl">
-      <div className="flex items-center gap-3 mb-4">
-        <div className="p-2 bg-emerald-500/20 rounded-lg border border-emerald-500/50">
-          <ServerIcon />
-        </div>
-        <h2 className="text-lg font-semibold text-white m-0">Agent 状态</h2>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {agents.length === 0 ? (
-          <div className="col-span-full text-center py-8 text-slate-400">
-            等待 Agent 注册...
-          </div>
-        ) : (
-          agents.map((agent) => (
-            <div
-              key={agent.id}
-              className="group bg-gradient-to-br from-slate-800/50 to-slate-900/50 border border-slate-700/50 rounded-lg p-4 hover:border-primary/50 hover:shadow-lg hover:shadow-primary/20 transition-all duration-200 cursor-pointer"
-            >
-              <div className="flex items-start justify-between mb-3">
-                <strong className="text-white font-medium">{agent.name}</strong>
-                <StatusBadge value={agent.status} />
-              </div>
-              <div className="space-y-1 text-sm text-slate-400">
-                <p className="font-mono text-xs">{agent.hostname}</p>
-                <p className="text-xs">
-                  {formatTimestamp(agent.last_heartbeat_at)}
-                </p>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-    </section>
-  );
-}
+function AgentSidebar({ open, agents, audits, onClose }) {
+  useEffect(() => {
+    if (!open) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [open, onClose]);
 
-function AuditTable({ audits }) {
   return (
-    <section className="bg-slate-800/30 backdrop-blur-sm border border-slate-700/50 rounded-xl p-6 shadow-xl overflow-x-auto">
-      <h2 className="text-lg font-semibold text-white mb-4">Agent 审计日志</h2>
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-slate-700">
-              <th className="text-left py-3 px-4 text-sm font-medium text-slate-300">
-                Agent
-              </th>
-              <th className="text-left py-3 px-4 text-sm font-medium text-slate-300">
-                事件
-              </th>
-              <th className="text-left py-3 px-4 text-sm font-medium text-slate-300">
-                原因
-              </th>
-              <th className="text-left py-3 px-4 text-sm font-medium text-slate-300">
-                时间
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {audits.length === 0 ? (
-              <tr>
-                <td colSpan="4" className="text-center py-8 text-slate-400">
-                  暂无审计日志
-                </td>
-              </tr>
+    <>
+      <button
+        type="button"
+        aria-label="关闭 Agent 面板"
+        tabIndex={open ? 0 : -1}
+        className={`fixed inset-0 z-40 bg-slate-950/45 backdrop-blur-[2px] transition-opacity duration-200 ${
+          open ? "opacity-100" : "pointer-events-none opacity-0"
+        }`}
+        onClick={onClose}
+      />
+      <aside
+        aria-label="Agent 状态与审计日志"
+        aria-hidden={!open}
+        className={`fixed left-4 top-[9rem] bottom-4 z-40 flex w-[calc(100vw-2rem)] max-w-md flex-col overflow-hidden rounded-2xl border border-slate-600/70 bg-slate-900/95 shadow-2xl shadow-slate-950/70 backdrop-blur-xl transition-all duration-200 lg:top-24 ${
+          open
+            ? "translate-x-0 opacity-100"
+            : "pointer-events-none -translate-x-[110%] opacity-0"
+        }`}
+      >
+        <div className="flex items-center justify-between border-b border-slate-700 px-5 py-4">
+          <div>
+            <h2 className="m-0 text-base font-semibold text-white">
+              Agent 面板
+            </h2>
+            <p className="m-0 mt-1 text-xs text-slate-400">
+              节点状态与最近审计事件
+            </p>
+          </div>
+          <button
+            type="button"
+            aria-label="关闭 Agent 面板"
+            onClick={onClose}
+            className="rounded-lg border border-slate-700 p-2 text-slate-400 transition-colors hover:border-slate-500 hover:bg-slate-800 hover:text-white cursor-pointer"
+          >
+            <CloseIcon />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <ServerIcon />
+              <h3 className="m-0 text-sm font-semibold text-white">
+                Agent 状态
+              </h3>
+            </div>
+            <span className="text-xs text-slate-500">
+              {agents.length} 个节点
+            </span>
+          </div>
+          <div className="space-y-3">
+            {agents.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-slate-700 py-8 text-center text-sm text-slate-500">
+                等待 Agent 注册...
+              </div>
             ) : (
-              audits.map((audit) => (
-                <tr
-                  key={`${audit.agent_id}-${audit.created_at}-${audit.event}`}
-                  className="border-b border-slate-700/50 hover:bg-slate-700/30 transition-colors duration-150"
+              agents.map((agent) => (
+                <div
+                  key={agent.id}
+                  className="rounded-xl border border-slate-700/70 bg-slate-800/55 p-4"
                 >
-                  <td className="py-3 px-4 text-sm text-slate-300 font-mono">
-                    {audit.agent_id}
-                  </td>
-                  <td className="py-3 px-4 text-sm">
-                    <StatusBadge value={audit.event} />
-                  </td>
-                  <td className="py-3 px-4 text-sm text-slate-400">
-                    {audit.reason}
-                  </td>
-                  <td className="py-3 px-4 text-sm text-slate-400">
-                    {formatTimestamp(audit.created_at)}
-                  </td>
-                </tr>
+                  <div className="mb-2 flex items-start justify-between gap-3">
+                    <strong className="text-sm font-medium text-white">
+                      {agent.name}
+                    </strong>
+                    <StatusBadge value={agent.status} />
+                  </div>
+                  <p className="m-0 text-xs font-mono text-slate-400">
+                    {agent.hostname}
+                  </p>
+                  <p className="m-0 mt-1 text-xs text-slate-500">
+                    {formatTimestamp(agent.last_heartbeat_at)}
+                  </p>
+                </div>
               ))
             )}
-          </tbody>
-        </table>
-      </div>
-    </section>
+          </div>
+
+          <div className="mb-4 mt-7 flex items-center justify-between">
+            <h3 className="m-0 text-sm font-semibold text-white">审计日志</h3>
+            <span className="text-xs text-slate-500">
+              最近 {Math.min(audits.length, 20)} 条
+            </span>
+          </div>
+          <div className="space-y-3">
+            {audits.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-slate-700 py-8 text-center text-sm text-slate-500">
+                暂无审计日志
+              </div>
+            ) : (
+              audits.slice(0, 20).map((audit) => (
+                <div
+                  key={`${audit.agent_id}-${audit.created_at}-${audit.event}`}
+                  className="rounded-xl border border-slate-700/60 bg-slate-800/35 p-3"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="truncate text-xs font-mono text-slate-300">
+                      {audit.agent_id}
+                    </span>
+                    <StatusBadge value={audit.event} />
+                  </div>
+                  <p className="m-0 mt-2 text-xs text-slate-400">
+                    {audit.reason}
+                  </p>
+                  <p className="m-0 mt-1 text-xs text-slate-600">
+                    {formatTimestamp(audit.created_at)}
+                  </p>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </aside>
+    </>
   );
 }
 
@@ -1543,6 +1593,7 @@ function App() {
   const [profileWindowResult, setProfileWindowResult] = useState(null);
   const [profileMessage, setProfileMessage] = useState("");
   const [activeMode, setActiveMode] = useState("task");
+  const [agentSidebarOpen, setAgentSidebarOpen] = useState(false);
   const [error, setError] = useState("");
 
   const loadTask = useCallback(async (taskId) => {
@@ -1645,7 +1696,27 @@ function App() {
           </div>
         </div>
       </nav>
+      <AgentSidebar
+        open={agentSidebarOpen}
+        agents={agents}
+        audits={audits}
+        onClose={() => setAgentSidebarOpen(false)}
+      />
       <main className="max-w-[1600px] mx-auto px-6 py-6 space-y-6">
+        <div className="flex items-center justify-start">
+          <button
+            type="button"
+            aria-expanded={agentSidebarOpen}
+            onClick={() => setAgentSidebarOpen(true)}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-600/70 bg-slate-800/70 px-4 py-2 text-sm font-medium text-slate-200 shadow-lg backdrop-blur-sm transition-all hover:border-primary/60 hover:bg-slate-700/80 hover:text-white cursor-pointer"
+          >
+            <ServerIcon />
+            Agent 面板
+            <span className="rounded-full bg-slate-700 px-2 py-0.5 text-xs text-slate-300">
+              {agents.length}
+            </span>
+          </button>
+        </div>
         <section className="bg-slate-800/30 backdrop-blur-sm border border-slate-700/50 rounded-xl p-6 shadow-xl">
           {activeMode === "task" ? (
             <TaskForm agents={agents} onCreated={load} />
@@ -1658,7 +1729,6 @@ function App() {
             <p className="text-red-400 text-sm">{error}</p>
           </div>
         )}
-        <AgentCards agents={agents} />
         <SessionTable
           sessions={sessions}
           onSelect={handleSelectSession}
@@ -1670,7 +1740,6 @@ function App() {
           onQuery={queryProfileWindow}
           message={profileMessage}
         />
-        <AuditTable audits={audits} />
         <TaskTable tasks={tasks} onSelect={handleSelectTask} />
         <ResultPanel task={selectedTaskStillExists ? selectedTask : null} />
       </main>
