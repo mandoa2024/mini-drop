@@ -76,7 +76,7 @@ def stack_source(frames: list[str]) -> str:
 
 
 def profile_summary(raw: str, top_k: int = 50) -> dict:
-    stacks = []
+    stack_totals: dict[tuple[str, tuple[str, ...]], int] = {}
     function_totals: dict[tuple[str, str], dict[str, int]] = {}
     source_totals: dict[str, int] = {}
     total_samples = 0
@@ -88,15 +88,8 @@ def profile_summary(raw: str, top_k: int = 50) -> dict:
         source = stack_source(frames)
         total_samples += count
         source_totals[source] = source_totals.get(source, 0) + count
-        stack_text = ";".join(frames)
-        stacks.append(
-            {
-                "stack_id": hashlib.sha256(stack_text.encode()).hexdigest()[:16],
-                "source": source,
-                "frames": frames,
-                "samples": count,
-            }
-        )
+        stack_key = (source, tuple(frames))
+        stack_totals[stack_key] = stack_totals.get(stack_key, 0) + count
         for frame in dict.fromkeys(frames):
             values = function_totals.setdefault(
                 (source, frame), {"self_samples": 0, "total_samples": 0}
@@ -106,6 +99,20 @@ def profile_summary(raw: str, top_k: int = 50) -> dict:
 
     if total_samples <= 0:
         raise ValueError("no samples found")
+
+    stacks = []
+    for (source, frames), samples in stack_totals.items():
+        stack_text = ";".join(frames)
+        stacks.append(
+            {
+                "stack_id": hashlib.sha256(
+                    stack_text.encode()
+                ).hexdigest()[:16],
+                "source": source,
+                "frames": list(frames),
+                "samples": samples,
+            }
+        )
 
     for stack in stacks:
         denominator = source_totals[stack["source"]]

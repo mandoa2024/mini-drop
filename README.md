@@ -14,7 +14,7 @@ Mini-Drop 是一个最小可运行的 Linux 性能采集平台，包含 Web、Se
 安装好 Docker 后执行：
 
 ```bash
-git clone <your-repository-url> minidrop
+git clone https://github.com/mandoa2024/maxrise.git minidrop
 cd minidrop
 bash scripts/ubuntu-preflight.sh
 docker compose up -d
@@ -173,7 +173,11 @@ python3 -m pytest -q
 证据，LLM 只能调用预定义的只读工具，最终报告引用的每个 `evidence_id`
 都会由 Server 校验。
 
-项目根目录已提供 `.env`。只需填写：
+如需启用 LLM，将示例配置复制为本地 `.env`，再填写 Key：
+
+```bash
+cp .env.example .env
+```
 
 ```env
 LLM_PROVIDER=deepseek

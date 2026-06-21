@@ -111,6 +111,19 @@ def test_profile_summary_tracks_self_and_inclusive_samples():
     assert summary["stacks"][0]["stack_id"]
 
 
+def test_profile_summary_aggregates_duplicate_stacks():
+    summary = profile_summary(
+        "root;worker;leaf 3\nroot;worker;leaf 7\nroot;other 10"
+    )
+    stacks = {
+        tuple(item["frames"]): item for item in summary["stacks"]
+    }
+
+    duplicate = stacks[("root", "worker", "leaf")]
+    assert duplicate["samples"] == 10
+    assert duplicate["percent"] == 50.0
+
+
 def test_compare_profile_summaries_returns_verifiable_evidence():
     baseline = profile_summary(
         "main;handle_request;parse_payload 10\n"
